@@ -6,11 +6,12 @@ from fastapi import FastAPI
 
 import config
 import db
+from inventory import schema as inventory_schema
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db.init_db([])  # domain schemas get registered here as they are added
+    db.init_db([inventory_schema.SCHEMA])  # each domain registers its schema here
     yield
 
 
