@@ -12,3 +12,9 @@ def test_health_creates_db_and_returns_ok(monkeypatch):
         with TestClient(app_module.create_app()) as client:
             assert client.get("/health").json() == {"status": "ok"}
         assert os.path.exists(os.path.join(tmp, "homestock.db"))
+
+
+def test_ui_is_served_at_root(client):
+    page = client.get("/")
+    assert page.status_code == 200 and "HomeStock" in page.text
+    assert client.get("/app.js").status_code == 200

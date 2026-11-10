@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HomeStock</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>HomeStock</h1>
+    <p>What's in the house, and what to buy.</p>
+  </header>
+
+  <div id="error" class="error" role="alert" hidden></div>
+
+  <main>
+    <section aria-labelledby="inv-title">
+      <div class="section-head">
+        <h2 id="inv-title">Inventory</h2>
+        <div class="filters" role="group" aria-label="Filter items">
+          <button type="button" data-filter="all" class="active">All</button>
+          <button type="button" data-filter="low">Low stock</button>
+          <button type="button" data-filter="expiring">Expiring in 3 days</button>
+          <select id="location-filter" aria-label="Location">
+            <option value="">All locations</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Location</th><th>Stock</th><th>Restock at</th><th>Expires</th><th></th></tr>
+        </thead>
+        <tbody id="items"></tbody>
+      </table>
+      </div>
+      <p id="items-empty" class="empty" hidden>No items match.</p>
+
+      <form id="item-form" class="add-form">
+        <h3>Add item</h3>
+        <input name="name" placeholder="Name" required maxlength="100">
+        <select name="location_id" id="item-location" required aria-label="Location"></select>
+        <label>Quantity <input name="quantity" type="number" min="0" step="any" value="1"></label>
+        <label>Unit <input name="unit" value="pcs" maxlength="20"></label>
+        <label>Restock at <input name="min_threshold" type="number" min="0" step="any" value="0"></label>
+        <label>Expires <input name="expiry_date" type="date"></label>
+        <button type="submit">Add</button>
+      </form>
+
+      <form id="location-form" class="add-form">
+        <h3>Add location</h3>
+        <input name="name" placeholder="e.g. freezer" required maxlength="50">
+        <button type="submit">Add</button>
+      </form>
+    </section>
+
+    <section aria-labelledby="shop-title">
+      <div class="section-head">
+        <h2 id="shop-title">Shopping list</h2>
+        <button type="button" id="from-low-stock">Add low-stock items</button>
+      </div>
+
+      <ul id="open-entries" class="entries"></ul>
+      <p id="entries-empty" class="empty" hidden>Nothing to buy.</p>
+
+      <form id="entry-form" class="add-form">
+        <h3>Add to list</h3>
+        <input name="name" placeholder="Name" required maxlength="100">
+        <label>Quantity <input name="quantity" type="number" min="0.01" step="any" value="1"></label>
+        <label>Unit <input name="unit" value="pcs" maxlength="20"></label>
+        <button type="submit">Add</button>
+      </form>
+
+      <details>
+        <summary>Bought</summary>
+        <ul id="bought-entries" class="entries bought"></ul>
+      </details>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

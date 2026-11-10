@@ -135,7 +135,7 @@ def consume(conn: sqlite3.Connection, item_id: int, amount: float) -> dict:
         raise Conflict("amount must be positive")
     item = get_item(conn, item_id)
     if amount > item["quantity"]:
-        raise Conflict(f"only {item['quantity']} {item['unit']} of {item['name']} in stock")
+        raise Conflict(f"only {item['quantity']:g} {item['unit']} of {item['name']} in stock")
     conn.execute("UPDATE items SET quantity = quantity - ? WHERE id = ?", (amount, item_id))
     conn.commit()
     return get_item(conn, item_id)
