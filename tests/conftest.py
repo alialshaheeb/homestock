@@ -4,12 +4,13 @@ from fastapi.testclient import TestClient
 
 import db
 from inventory.schema import SCHEMA as INVENTORY_SCHEMA
+from restock.schema import SCHEMA as RESTOCK_SCHEMA
 
 
 @pytest.fixture
 def conn(monkeypatch, tmp_path):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    db.init_db([INVENTORY_SCHEMA])
+    db.init_db([INVENTORY_SCHEMA, RESTOCK_SCHEMA])
     connection = db.get_connection()
     yield connection
     connection.close()
