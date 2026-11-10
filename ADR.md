@@ -31,3 +31,11 @@ Context: The 70% coverage bar is on core business logic. Most of HomeStock's rul
 Decision: Service tests call inventory/service.py and restock/service.py directly on a fresh temporary SQLite file per test, with no mocks, so the constraints are exercised too. Restock is tested against the real Inventory functions. Route tests only check status codes (201/204/404/409/422) and one end-to-end flow (low stock → list → bought → restocked). Coverage is measured on the inventory and restock packages.
 Alternatives considered: Mocking the database or the inventory client: faster and more isolated, but it would not catch a broken SQL query or constraint, which is where most bugs here would be. Testing only through HTTP: covers everything at once, but failures point to the route instead of the rule.
 Consequences: 42 tests run in about a second with 99% coverage of the two domains. Left thinner on purpose: the JavaScript UI (checked by hand in a browser) and the `python app.py` start-up line. When Restock calls Inventory over HTTP (Assignment 2), its tests will need a stub or a running Inventory service.
+
+## 5. No user accounts or login
+Date: 2026-11-10
+Status: Decided
+Context: HomeStock is used by one household on its own network: everyone who can open it is allowed to change the stock. Adding login was one of the free choices (§1b).
+Decision: No authentication, user accounts or per-user data. Every request acts on the single household's data.
+Alternatives considered: Session login with hashed passwords: needed if several households shared one deployment or the app were exposed to the internet, but it adds a users table, password storage, sessions and their tests, none of which serves the two domains being built. HTTP basic auth with one shared password: cheap, but gives a false sense of security over plain HTTP and is easy to leak.
+Consequences: The code stays focused on Inventory and Restock, and there is no password data to protect. The app must not be exposed publicly as-is; before deploying it to the internet (Assignment 2), access control has to be added or the deployment restricted, and every table would need a household id if more than one household used it.
