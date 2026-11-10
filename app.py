@@ -7,6 +7,7 @@ from fastapi import FastAPI
 import config
 import db
 from inventory import schema as inventory_schema
+from inventory.routes import router as inventory_router
 
 
 @asynccontextmanager
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
     def health():
         return {"status": "ok"}
 
+    app.include_router(inventory_router)
     return app
 
 
