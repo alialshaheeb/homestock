@@ -38,3 +38,12 @@ def test_inventory_down_gives_a_clear_503_and_the_list_still_works(client, inven
     assert "inventory service is not reachable" in response.json()["detail"]
     assert client.get("/shopping-list").status_code == 200
     assert client.get("/health").status_code == 200  # Inventory's state is not part of our health
+
+
+def test_inventory_down_on_mark_bought_is_a_503_and_nothing_changes(client, inventory):
+    inventory.add(1, "milk")
+    entry = client.post("/shopping-list", json={"inventory_item_id": 1, "quantity": 2}).json()
+    inventory.down = True
+    response = client.post(f"/shopping-list/{entry['id']}/bought")
+    assert response.status_code == 503
+    assert client.get(f"/shopping-list/{entry['id']}").json()["status"] == "open"

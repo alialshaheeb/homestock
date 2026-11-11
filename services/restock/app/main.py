@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import db
+from app.inventory_client import InventoryUnavailable
 from app.migrations import migrate
 from app.routes import router
 
@@ -40,6 +41,14 @@ def create_app() -> FastAPI:
             allow_origins=origins,
             allow_methods=["GET", "POST", "PATCH", "DELETE"],
             allow_headers=["Content-Type"],
+        )
+
+    @app.exception_handler(InventoryUnavailable)
+    async def inventory_unavailable(request: Request, error: InventoryUnavailable):
+        """Safety net for any route: Inventory being down is a clear 503, never a 500.
+        (A 500 would also lose its CORS headers, and the browser would see no answer at all.)"""
+        return JSONResponse(
+            {"detail": "The inventory service is not reachable right now. Try again in a moment."}, status_code=503
         )
 
     @app.middleware("http")
