@@ -7,3 +7,5 @@ data/
 .coverage
 htmlcov/
 .pytest_cache/
+.env
+.ruff_cache/
