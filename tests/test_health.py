@@ -18,3 +18,4 @@ def test_ui_is_served_at_root(client):
     page = client.get("/")
     assert page.status_code == 200 and "HomeStock" in page.text
     assert client.get("/app.js").status_code == 200
+    assert page.headers["cache-control"] == "no-cache"  # browsers recheck, so UI updates show up

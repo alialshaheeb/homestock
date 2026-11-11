@@ -25,6 +25,14 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="HomeStock", lifespan=lifespan)
 
+    @app.middleware("http")
+    async def always_revalidate(request, call_next):
+        # "no-cache" = the browser may keep a copy but must ask the server whether it
+        # is still current, so a changed ui/ file shows up on the next normal refresh.
+        response = await call_next(request)
+        response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
     @app.get("/health")
     def health():
         return {"status": "ok"}
