@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from inventory import service as inv
+from app import service as inv
 
 
 def fridge_id(conn):
