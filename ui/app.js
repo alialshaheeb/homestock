@@ -1,6 +1,6 @@
-// HomeStock UI: plain JavaScript that only talks to the JSON API.
-// API_BASE is "" because the same process serves this page and the API (Assignment 1).
-const API_BASE = "";
+// HomeStock UI: plain JavaScript that only talks to the two services' JSON APIs.
+// Their addresses come from config.js (local compose ports, or the Azure URLs written at deploy time).
+const CONFIG = window.HOMESTOCK_CONFIG;
 
 const state = {
   view: "stock",      // "stock", "places" or "list": which tab is open
@@ -18,12 +18,26 @@ const SOON_DAYS = 3;  // "expiring soon" = within 3 days, same as the API filter
 
 // ---------- talking to the API ----------
 
+// /shopping-list belongs to the restock service; everything else to the inventory service.
+function serviceFor(path) {
+  return path.startsWith("/shopping-list")
+    ? { name: "shopping list", url: CONFIG.restockUrl }
+    : { name: "inventory", url: CONFIG.inventoryUrl };
+}
+
 async function api(method, path, body) {
-  const res = await fetch(API_BASE + path, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const service = serviceFor(path);
+  let res;
+  try {
+    res = await fetch(service.url + path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    // No answer at all: the service is stopped or unreachable.
+    throw new Error(`Can't reach the ${service.name} service right now. Try again in a moment.`);
+  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     // 422 from FastAPI is a list of field errors; 404/409 carry one message.
@@ -45,16 +59,21 @@ function itemsPath() {
 
 async function load() {
   const filtered = state.filter !== "all" || state.place;
-  const [locations, allItems, entries, items] = await Promise.all([
-    api("GET", "/locations"),
-    api("GET", "/items"),
+  // Each service is loaded on its own, so one being down does not blank the other's screen.
+  const [stock, list] = await Promise.allSettled([
+    Promise.all([api("GET", "/locations"), api("GET", "/items"), filtered ? api("GET", itemsPath()) : null]),
     api("GET", "/shopping-list"),
-    filtered ? api("GET", itemsPath()) : null,
   ]);
-  // Places in the order they were added (fridge, pantry, toiletries, then your own).
-  locations.sort((a, b) => a.id - b.id);
-  Object.assign(state, { locations, allItems, entries, items: items ?? allItems });
+  if (stock.status === "fulfilled") {
+    const [locations, allItems, items] = stock.value;
+    // Places in the order they were added (fridge, pantry, toiletries, then your own).
+    locations.sort((a, b) => a.id - b.id);
+    Object.assign(state, { locations, allItems, items: items ?? allItems });
+  }
+  if (list.status === "fulfilled") state.entries = list.value;
   render();
+  const failed = [stock, list].find((r) => r.status === "rejected");
+  if (failed) throw failed.reason;
 }
 
 // Run an action, reload everything, and show a message; errors go to the toast.

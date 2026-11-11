@@ -4,81 +4,92 @@ Household inventory and restock list. Track what is in the fridge, pantry and
 cupboards, see what is running low or about to expire, and turn that into a
 shopping list. Buying something on the list puts it back in stock.
 
-Python 3.10+ / FastAPI / SQLite, one process, one container.
+Since Assignment 2 it runs as **two services**, each with its own SQL Server database,
+and a static UI that calls both:
 
-## Run it
+| Part | Folder | Owns | Local address |
+|---|---|---|---|
+| inventory service | `services/inventory` | places (`locations`) and `items` | http://localhost:8001 (docs at `/docs`) |
+| restock service | `services/restock` | `shopping_list`; asks inventory over HTTP for stock | http://localhost:8002 (docs at `/docs`) |
+| UI | `ui` | static HTML/CSS/JS | http://localhost:8080 |
+
+The restock service finds the inventory service through `INVENTORY_URL`. If inventory is
+down, the shopping list still loads; "add everything running low" and "mark bought" on a
+linked item answer 503 with a clear message instead of failing silently.
+
+## Run everything locally
+
+Needs Docker Desktop (on Apple Silicon, enable Rosetta in its settings).
 
 ```bash
-git clone https://github.com/alialshaheeb/homestock.git
-cd homestock
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python app.py
+cp .env.example .env          # Windows PowerShell: Copy-Item .env.example .env
+docker compose up --build
 ```
 
-Open http://localhost:8000 for the UI. The API docs are at http://localhost:8000/docs.
+The first start downloads SQL Server and takes a few minutes; afterwards about 30 s,
+because SQL Server must be healthy before `db-init` creates the databases and logins and
+the services start. Then open http://localhost:8080.
 
-No setup step is needed: on start-up the app creates the database file, its
-tables and the default locations (fridge, pantry, toiletries) if they are missing.
+- Stop: `Ctrl+C`, or `docker compose down`. Data is kept in the `sqldata` volume.
+- Wipe all data: `docker compose down -v`.
+- Try a partial failure: `docker compose stop inventory`, then use the shopping list.
+  `docker compose start inventory` brings it back.
 
 ## Configuration
 
-Everything is set through environment variables; none are required.
+Each service reads only environment variables.
 
-| Variable   | Default  | Meaning |
-|------------|----------|---------|
-| `PORT`     | `8000`   | Port the server listens on (always bound to `0.0.0.0`) |
-| `DATA_DIR` | `./data` | Directory holding the SQLite file |
+| Variable | Service | Default | Meaning |
+|---|---|---|---|
+| `DATABASE_URL` | both | none (required, secret) | `mssql://user:password@host:1433/database` |
+| `PORT` | both | `8000` | Port inside the container |
+| `CORS_ORIGINS` | both | none | Comma-separated origins allowed to call the API (the UI's address) |
+| `GIT_SHA` | both | `dev` | Version reported by `/health` |
+| `INVENTORY_URL` | restock | `http://inventory:8000` | Base URL of the inventory service |
+| `INVENTORY_TIMEOUT_S` | restock | `2` | Timeout for every call to inventory, in seconds |
 
-The database lives at **`$DATA_DIR/homestock.db`** (by default `./data/homestock.db`).
+The UI reads the two service URLs from `ui/config.js`.
 
-## Structure
+## Database and migrations
 
-```
-app.py               entry point: creates the app, registers both domains, serves ui/
-config.py            reads PORT and DATA_DIR
-db.py                SQLite connection helper and start-up schema runner
-inventory/           domain 1: locations and items, stock levels, expiry
-  schema.py          tables: locations, items
-  service.py         all inventory logic and SQL
-  routes.py          /locations, /items
-restock/             domain 2: the shopping list
-  schema.py          table: shopping_list
-  service.py         all shopping-list logic and SQL
-  inventory_client.py   the only code in restock that talks to inventory (the seam)
-  routes.py          /shopping-list
-ui/                  static HTML/CSS/JS that calls the API
-tests/               pytest suite
-ADR.md               architecture decision records
-AI_USAGE.md          log of AI-assisted changes
-```
+Each service creates and changes its own tables with numbered SQL files in
+`services/<name>/migrations/`, applied automatically and in order at start-up. Applied
+files are recorded in a `schema_migrations` table, so a restart applies nothing. An applied
+file is never edited; a change goes in a new file.
 
-## API overview
+## Tests
 
-| Method | Path | What it does |
-|---|---|---|
-| GET | `/health` | Liveness check |
-| GET, POST | `/locations` | List or add storage locations |
-| GET | `/items?location_id=&low_stock=true&expiring_within_days=3` | List items, with optional filters |
-| POST | `/items` | Add an item |
-| GET, PATCH, DELETE | `/items/{id}` | Read, change or remove an item |
-| POST | `/items/{id}/consume` | Use up an amount (`{"amount": 1}`); 409 if more than in stock |
-| POST | `/items/{id}/restock` | Add an amount to stock |
-| GET | `/shopping-list?status=open\|bought` | The shopping list |
-| POST | `/shopping-list` | Add an entry: free text (`name`) or linked (`inventory_item_id`) |
-| POST | `/shopping-list/from-low-stock` | Add every low-stock item not already on the list |
-| GET, PATCH, DELETE | `/shopping-list/{id}` | Read, change or remove an entry |
-| POST | `/shopping-list/{id}/bought` | Mark bought; a linked entry restocks its inventory item |
-
-Full request and response schemas: `/docs` while the app runs.
-
-## Tests and coverage
+Tests run per service against a real SQL Server test database. With the compose stack
+running (it publishes SQL Server on port 1433), from a service folder:
 
 ```bash
-pytest --cov=inventory --cov=restock --cov-report=term-missing
+cd services/inventory                     # or services/restock
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt     # Windows: .venv\Scripts\pip
+export TEST_DATABASE_URL="mssql://sa:<SA_PASSWORD from .env>@localhost:1433/inventory_test"
+# PowerShell: $env:TEST_DATABASE_URL="mssql://sa:<SA_PASSWORD>@localhost:1433/inventory_test"
+pytest --cov=app --cov-report=term-missing
+ruff check .
 ```
 
-Coverage is measured on the two domain packages, where the business logic lives.
+The test database (`inventory_test`, `restock_test`) is created if missing and emptied
+before each test. Without `TEST_DATABASE_URL`, only the tests that need no database run.
+Restock's tests replace the inventory service with an in-memory fake.
 
-Result at the time of writing: **42 tests passed, 99% coverage** (273 statements, 1 missed).
+## Run one service on its own
+
+```bash
+cd services/inventory
+DATABASE_URL="mssql://sa:<SA_PASSWORD>@localhost:1433/inventory" uvicorn app.main:app --port 8001
+```
+
+## Repository layout
+
+```
+docker-compose.yml        SQL Server, db-init, both services, nginx for the UI
+db/init.sql               local only: creates both databases and one login per service
+services/inventory/       Dockerfile, requirements*.txt, app/, migrations/, tests/
+services/restock/         same; app/inventory_client.py is the only code that calls inventory
+ui/                       static UI; config.js says where the services are
+ADR.md, AI_USAGE.md       decision records and AI usage log
+```
