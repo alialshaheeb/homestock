@@ -2,83 +2,106 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1E3A2F">
   <title>HomeStock</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <h1>HomeStock</h1>
-    <p>What's in the house, and what to buy.</p>
-  </header>
+  <div class="app">
+    <header class="top">
+      <h1 id="screen-title">In stock</h1>
+      <p id="screen-sub" class="sub"></p>
+    </header>
 
-  <div id="error" class="error" role="alert" hidden></div>
-
-  <main>
-    <section aria-labelledby="inv-title">
-      <div class="section-head">
-        <h2 id="inv-title">Inventory</h2>
-        <div class="filters" role="group" aria-label="Filter items">
-          <button type="button" data-filter="all" class="active">All</button>
-          <button type="button" data-filter="low">Low stock</button>
-          <button type="button" data-filter="expiring">Expiring in 3 days</button>
-          <select id="location-filter" aria-label="Location">
-            <option value="">All locations</option>
-          </select>
+    <main>
+      <!-- Inventory domain: what is in the house, grouped by where it is kept -->
+      <section id="view-stock" class="view" aria-labelledby="screen-title">
+        <div class="filters" role="group" aria-label="Show">
+          <button type="button" class="chip on" data-filter="all">Everything</button>
+          <button type="button" class="chip" data-filter="low">Running low</button>
+          <button type="button" class="chip" data-filter="expiring">Expiring soon</button>
         </div>
+        <div class="places" id="places" role="group" aria-label="Place"></div>
+        <div id="shelves"></div>
+        <div id="stock-empty" class="empty" hidden></div>
+      </section>
+
+      <!-- Restock domain: the shopping list -->
+      <section id="view-list" class="view" aria-labelledby="screen-title" hidden>
+        <button type="button" id="from-low-stock" class="wide-btn">Add everything that's running low</button>
+        <ul id="open-entries" class="list"></ul>
+        <div id="list-empty" class="empty" hidden>
+          <p>Nothing to buy.</p>
+          <p class="hint">Tap + to add something, or add everything that's running low.</p>
+        </div>
+        <h2 id="bought-title" class="list-title" hidden>Bought</h2>
+        <ul id="bought-entries" class="list done"></ul>
+      </section>
+    </main>
+
+    <nav class="tabbar" aria-label="Screens">
+      <button type="button" class="tab on" data-view="stock">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16" /><path d="M7 5v-2M15 12V10M10 19v-2" /></svg>
+        <span>In stock</span>
+      </button>
+      <button type="button" class="fab" id="fab" aria-label="Add an item">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+      </button>
+      <button type="button" class="tab" data-view="list">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14l-1.5 11h-11z" /><path d="M9 7a3 3 0 0 1 6 0" /></svg>
+        <span>Shopping list</span>
+        <span class="count" id="list-count" hidden></span>
+      </button>
+    </nav>
+  </div>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+    <div class="sheet-head">
+      <h2 id="sheet-title"></h2>
+      <button type="button" class="close" id="sheet-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+      </button>
+    </div>
+
+    <!-- Add or edit an inventory item -->
+    <form id="form-item" class="form" hidden>
+      <label>Name <input name="name" required maxlength="100" autocomplete="off"></label>
+      <label>Kept in <select name="location_id" required></select></label>
+      <div class="row">
+        <label>Quantity <input name="quantity" type="number" min="0" step="any" inputmode="decimal" required></label>
+        <label>Unit <input name="unit" maxlength="20" required></label>
       </div>
-
-      <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Item</th><th>Location</th><th>Stock</th><th>Restock at</th><th>Expires</th><th></th></tr>
-        </thead>
-        <tbody id="items"></tbody>
-      </table>
+      <label>Restock when at or below <input name="min_threshold" type="number" min="0" step="any" inputmode="decimal"></label>
+      <p class="hint">Leave at 0 if you never want a reminder.</p>
+      <label>Expires <input name="expiry_date" type="date"></label>
+      <button type="submit" class="primary" id="item-submit">Add to stock</button>
+      <div class="secondary-actions" id="item-extra" hidden>
+        <button type="button" id="item-to-list">Put on the shopping list</button>
+        <button type="button" id="item-delete" class="danger">Delete item</button>
       </div>
-      <p id="items-empty" class="empty" hidden>No items match.</p>
+    </form>
 
-      <form id="item-form" class="add-form">
-        <h3>Add item</h3>
-        <input name="name" placeholder="Name" required maxlength="100">
-        <select name="location_id" id="item-location" required aria-label="Location"></select>
-        <label>Quantity <input name="quantity" type="number" min="0" step="any" value="1"></label>
-        <label>Unit <input name="unit" value="pcs" maxlength="20"></label>
-        <label>Restock at <input name="min_threshold" type="number" min="0" step="any" value="0"></label>
-        <label>Expires <input name="expiry_date" type="date"></label>
-        <button type="submit">Add</button>
-      </form>
-
-      <form id="location-form" class="add-form">
-        <h3>Add location</h3>
-        <input name="name" placeholder="e.g. freezer" required maxlength="50">
-        <button type="submit">Add</button>
-      </form>
-    </section>
-
-    <section aria-labelledby="shop-title">
-      <div class="section-head">
-        <h2 id="shop-title">Shopping list</h2>
-        <button type="button" id="from-low-stock">Add low-stock items</button>
+    <!-- Add a free-text shopping-list entry -->
+    <form id="form-entry" class="form" hidden>
+      <label>What to buy <input name="name" required maxlength="100" autocomplete="off"></label>
+      <div class="row">
+        <label>Quantity <input name="quantity" type="number" min="0.01" step="any" inputmode="decimal" value="1" required></label>
+        <label>Unit <input name="unit" maxlength="20" value="pcs" required></label>
       </div>
+      <button type="submit" class="primary">Add to list</button>
+    </form>
 
-      <ul id="open-entries" class="entries"></ul>
-      <p id="entries-empty" class="empty" hidden>Nothing to buy.</p>
+    <!-- Add a storage place (a location) -->
+    <form id="form-place" class="form" hidden>
+      <label>Name of the place <input name="name" required maxlength="50" autocomplete="off" placeholder="freezer"></label>
+      <button type="submit" class="primary">Add place</button>
+    </form>
+  </div>
 
-      <form id="entry-form" class="add-form">
-        <h3>Add to list</h3>
-        <input name="name" placeholder="Name" required maxlength="100">
-        <label>Quantity <input name="quantity" type="number" min="0.01" step="any" value="1"></label>
-        <label>Unit <input name="unit" value="pcs" maxlength="20"></label>
-        <button type="submit">Add</button>
-      </form>
-
-      <details>
-        <summary>Bought</summary>
-        <ul id="bought-entries" class="entries bought"></ul>
-      </details>
-    </section>
-  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="app.js"></script>
 </body>
