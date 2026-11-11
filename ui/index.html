@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1E3A2F">
+  <meta name="theme-color" content="#F4E8D7">
   <title>HomeStock</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -15,43 +15,55 @@
     </header>
 
     <main>
-      <!-- Inventory domain: what is in the house, grouped by where it is kept -->
+      <!-- Inventory domain: what is in the house, one shelf per place -->
       <section id="view-stock" class="view" aria-labelledby="screen-title">
-        <div class="filters" role="group" aria-label="Show">
-          <button type="button" class="chip on" data-filter="all">Everything</button>
-          <button type="button" class="chip" data-filter="low">Running low</button>
-          <button type="button" class="chip" data-filter="expiring">Expiring soon</button>
+        <div class="chips" role="group" aria-label="Show">
+          <button type="button" class="chip filter" data-filter="all">Everything <span class="n" id="n-all"></span></button>
+          <button type="button" class="chip filter" data-filter="low">Running low <span class="n" id="n-low"></span></button>
+          <button type="button" class="chip filter" data-filter="expiring">Expiring soon <span class="n" id="n-expiring"></span></button>
         </div>
-        <div class="places" id="places" role="group" aria-label="Place"></div>
+        <div class="chips" id="places" role="group" aria-label="Place"></div>
         <div id="shelves"></div>
         <div id="stock-empty" class="empty" hidden></div>
       </section>
 
+      <!-- Inventory domain: the places things are kept -->
+      <section id="view-places" class="view" aria-labelledby="screen-title" hidden>
+        <div class="place-grid" id="place-grid"></div>
+      </section>
+
       <!-- Restock domain: the shopping list -->
       <section id="view-list" class="view" aria-labelledby="screen-title" hidden>
-        <button type="button" id="from-low-stock" class="wide-btn">Add everything that's running low</button>
+        <button type="button" id="from-low-stock" class="low-btn">
+          <span>Add everything running low</span>
+          <span class="badge" id="low-count" hidden></span>
+        </button>
         <ul id="open-entries" class="list"></ul>
         <div id="list-empty" class="empty" hidden>
           <p>Nothing to buy.</p>
           <p class="hint">Tap + to add something, or add everything that's running low.</p>
         </div>
-        <h2 id="bought-title" class="list-title" hidden>Bought</h2>
+        <h2 id="bought-title" class="section-title" hidden>Bought</h2>
         <ul id="bought-entries" class="list done"></ul>
       </section>
     </main>
 
     <nav class="tabbar" aria-label="Screens">
-      <button type="button" class="tab on" data-view="stock">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16" /><path d="M7 5v-2M15 12V10M10 19v-2" /></svg>
+      <button type="button" class="tab" data-view="stock">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         <span>In stock</span>
+      </button>
+      <button type="button" class="tab" data-view="places">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><rect x="13" y="13" width="7" height="7" rx="2" /></svg>
+        <span>Places</span>
       </button>
       <button type="button" class="fab" id="fab" aria-label="Add an item">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
       </button>
       <button type="button" class="tab" data-view="list">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14l-1.5 11h-11z" /><path d="M9 7a3 3 0 0 1 6 0" /></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1.4 11H6.4z" /><path d="M9 8a3 3 0 0 1 6 0" /></svg>
         <span>Shopping list</span>
-        <span class="count" id="list-count" hidden></span>
+        <span class="dot" id="list-count" hidden></span>
       </button>
     </nav>
   </div>
@@ -94,9 +106,9 @@
       <button type="submit" class="primary">Add to list</button>
     </form>
 
-    <!-- Add a storage place (a location) -->
+    <!-- Add a place (a location) -->
     <form id="form-place" class="form" hidden>
-      <label>Name of the place <input name="name" required maxlength="50" autocomplete="off" placeholder="freezer"></label>
+      <label>Name of the place <input name="name" required maxlength="50" autocomplete="off" placeholder="Freezer"></label>
       <button type="submit" class="primary">Add place</button>
     </form>
   </div>

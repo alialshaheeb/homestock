@@ -3,17 +3,18 @@
 const API_BASE = "";
 
 const state = {
-  view: "stock",      // "stock" or "list": which tab is open
+  view: "stock",      // "stock", "places" or "list": which tab is open
   filter: "all",      // "all", "low" or "expiring"
   place: "",          // location id to show, "" = every place
   locations: [],
-  allItems: [],       // every item, for the counts in the header
+  allItems: [],       // every item, for counts
   items: [],          // the items matching the current filter
   entries: [],        // the shopping list
   editingId: null,    // item open in the sheet, null when adding a new one
 };
 
 const $ = (id) => document.getElementById(id);
+const SOON_DAYS = 3;  // "expiring soon" = within 3 days, same as the API filter the UI uses
 
 // ---------- talking to the API ----------
 
@@ -37,7 +38,7 @@ async function api(method, path, body) {
 function itemsPath() {
   const params = new URLSearchParams();
   if (state.filter === "low") params.set("low_stock", "true");
-  if (state.filter === "expiring") params.set("expiring_within_days", "3");
+  if (state.filter === "expiring") params.set("expiring_within_days", String(SOON_DAYS));
   if (state.place) params.set("location_id", state.place);
   return `/items?${params}`;
 }
@@ -50,6 +51,8 @@ async function load() {
     api("GET", "/shopping-list"),
     filtered ? api("GET", itemsPath()) : null,
   ]);
+  // Places in the order they were added (fridge, pantry, toiletries, then your own).
+  locations.sort((a, b) => a.id - b.id);
   Object.assign(state, { locations, allItems, entries, items: items ?? allItems });
   render();
 }
@@ -84,6 +87,8 @@ function icon(path) {
 const ICON = { minus: "M5 12h14", plus: "M12 5v14M5 12h14", check: "M5 12.5l4.5 4.5L19 7", x: "M6 6l12 12M18 6L6 18" };
 
 const num = (n) => Number(n.toFixed(2)).toString(); // 1.5 -> "1.5", 4.0 -> "4"
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1); // "fridge" -> "Fridge"
 
 function daysUntil(iso) {
   const today = new Date(new Date().toDateString());
@@ -91,12 +96,14 @@ function daysUntil(iso) {
   return Math.round((new Date(y, m - 1, d) - today) / 86400000);
 }
 
+const isSoon = (item) => item.expiry_date && daysUntil(item.expiry_date) <= SOON_DAYS;
+
 function expiryText(iso) {
   const days = daysUntil(iso);
-  if (days < 0) return { text: "expired", cls: "bad" };
-  if (days === 0) return { text: "expires today", cls: "bad" };
-  if (days === 1) return { text: "expires tomorrow", cls: "warn" };
-  if (days <= 3) return { text: `expires in ${days} days`, cls: "warn" };
+  if (days < 0) return "expired";
+  if (days === 0) return "expires today";
+  if (days === 1) return "expires tomorrow";
+  if (days <= SOON_DAYS) return `expires in ${days} days`;
   return null; // far away: not worth a line
 }
 
@@ -112,70 +119,73 @@ function toast(text, isError = false) {
 
 // ---------- drawing the screens ----------
 
+const SCREENS = {
+  stock: { title: "In stock", fab: "Add an item" },
+  places: { title: "Places", fab: "Add a place" },
+  list: { title: "Shopping list", fab: "Add to the shopping list" },
+};
+
 function render() {
-  const onStock = state.view === "stock";
-  $("view-stock").hidden = !onStock;
-  $("view-list").hidden = onStock;
+  for (const view of Object.keys(SCREENS)) $(`view-${view}`).hidden = view !== state.view;
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.dataset.view === state.view));
-  $("fab").setAttribute("aria-label", onStock ? "Add an item" : "Add to the shopping list");
+  $("screen-title").textContent = SCREENS[state.view].title;
+  $("fab").setAttribute("aria-label", SCREENS[state.view].fab);
 
   const open = state.entries.filter((e) => e.status === "open");
   $("list-count").hidden = open.length === 0;
   $("list-count").textContent = open.length;
 
-  if (onStock) {
-    $("screen-title").textContent = "In stock";
-    const low = state.allItems.filter((i) => i.low_stock).length;
-    const soon = state.allItems.filter((i) => i.expiry_date && daysUntil(i.expiry_date) <= 3).length;
-    const parts = [];
-    if (low) parts.push(`${low} running low`);
-    if (soon) parts.push(`${soon} expiring soon`);
-    $("screen-sub").textContent = state.allItems.length === 0 ? "Nothing tracked yet"
-      : parts.length ? parts.join(", ") : "Everything is stocked";
-    renderStock();
-  } else {
-    $("screen-title").textContent = "Shopping list";
-    $("screen-sub").textContent = open.length ? `${open.length} to buy` : "All bought";
-    renderList(open);
-  }
+  if (state.view === "stock") renderStock();
+  if (state.view === "places") renderPlaces();
+  if (state.view === "list") renderList(open);
 }
 
 function renderStock() {
+  const low = state.allItems.filter((i) => i.low_stock).length;
+  const soon = state.allItems.filter(isSoon).length;
+  const parts = [];
+  if (low) parts.push(`${low} running low`);
+  if (soon) parts.push(`${soon} expiring soon`);
+  $("screen-sub").textContent = state.allItems.length === 0 ? "Nothing tracked yet"
+    : parts.length ? parts.join(", ") : "Everything is stocked";
+
+  // Filter chips with their counts.
+  $("n-all").textContent = state.allItems.length;
+  $("n-low").textContent = low;
+  $("n-expiring").textContent = soon;
   document.querySelectorAll("[data-filter]").forEach((c) => c.classList.toggle("on", c.dataset.filter === state.filter));
 
-  // Place chips: every place, each location, and one to add a new place.
-  const places = $("places");
-  places.replaceChildren(
+  // Place chips.
+  $("places").replaceChildren(
     placeChip("Every place", ""),
-    ...state.locations.map((loc) => placeChip(loc.name, String(loc.id))),
-    el("button", { type: "button", className: "chip add", textContent: "+ New place", onclick: () => openSheet("place") }),
+    ...state.locations.map((loc) => placeChip(cap(loc.name), String(loc.id))),
   );
 
-  // One shelf per location that has items to show.
+  // One shelf per place that has items to show.
   const shelves = state.locations
     .map((loc) => ({ loc, items: state.items.filter((i) => i.location_id === loc.id) }))
     .filter((s) => s.items.length > 0)
     .map(({ loc, items }) =>
       el("section", { className: "shelf" },
         el("div", { className: "shelf-head" },
-          el("h2", { textContent: loc.name }),
-          el("span", { textContent: `${items.length} ${items.length === 1 ? "item" : "items"}` })),
+          el("h2", { textContent: cap(loc.name) }),
+          el("span", { textContent: plural(items.length, "item", "items") })),
         el("ul", {}, ...items.map(itemRow))));
   $("shelves").replaceChildren(...shelves);
 
   const empty = $("stock-empty");
   empty.hidden = shelves.length > 0;
-  const noItemsAtAll = state.allItems.length === 0;
+  const nothing = state.allItems.length === 0;
   empty.replaceChildren(
-    el("p", { textContent: noItemsAtAll ? "Your shelves are empty." : "Nothing matches." }),
-    el("p", { className: "hint", textContent: noItemsAtAll ? "Tap + to add the first thing in your fridge or pantry." : "Try another filter or place." }),
+    el("p", { textContent: nothing ? "Your shelves are empty." : "Nothing matches." }),
+    el("p", { className: "hint", textContent: nothing ? "Tap + to add the first thing in your fridge or pantry." : "Try another filter or place." }),
   );
 }
 
 function placeChip(label, id) {
   return el("button", {
     type: "button",
-    className: `chip${state.place === id ? " on" : ""}`,
+    className: `chip place${state.place === id ? " on" : ""}`,
     textContent: label,
     onclick: () => { state.place = id; run(async () => {}); },
   });
@@ -185,38 +195,68 @@ function itemRow(item) {
   // Gauge: full at twice the restock level, so "low" sits at the halfway mark.
   const full = item.min_threshold > 0 ? item.min_threshold * 2 : Math.max(item.quantity, 1);
   const pct = Math.min(100, (item.quantity / full) * 100);
-
-  const meta = el("span", { className: "item-meta" });
-  if (item.min_threshold > 0) meta.append(`restock at ${num(item.min_threshold)} ${item.unit}`);
   const expiry = item.expiry_date && expiryText(item.expiry_date);
-  if (expiry) {
-    if (meta.childNodes.length) meta.append(", ");
-    meta.append(el("span", { className: expiry.cls, textContent: expiry.text }));
-  }
-  if (!meta.childNodes.length) meta.append("no reminder set");
 
-  const minus = el("button", {
-    type: "button", className: "step", ariaLabel: `Use one ${item.name}`,
-    disabled: item.quantity <= 0,
-    onclick: () => run(() => api("POST", `/items/${item.id}/consume`, { amount: Math.min(1, item.quantity) })),
-  }, icon(ICON.minus));
-  const plus = el("button", {
-    type: "button", className: "step", ariaLabel: `Add one ${item.name}`,
-    onclick: () => run(() => api("POST", `/items/${item.id}/restock`, { amount: 1 })),
-  }, icon(ICON.plus));
+  // With a restock level, the expiry gets its own line; without one it sits beside "no reminder".
+  const main = el("button", { type: "button", className: "item-main", ariaLabel: `Edit ${item.name}`, onclick: () => openSheet("item", item) },
+    el("span", { className: "item-name", textContent: item.name }));
+  if (item.min_threshold > 0) {
+    main.append(el("span", { className: "item-meta", textContent: `restock at ${num(item.min_threshold)} ${item.unit}` }));
+    if (expiry) main.append(el("span", { className: "expiry", textContent: expiry }));
+  } else {
+    main.append(el("span", { className: "item-meta" }, "no reminder", expiry ? el("span", { className: "expiry", textContent: expiry }) : null));
+  }
+  main.append(el("span", { className: "gauge" }, el("i", { style: `width:${pct}%` })));
 
   return el("li", { className: `item${item.low_stock ? " low" : ""}` },
-    el("button", { type: "button", className: "item-main", ariaLabel: `Edit ${item.name}`, onclick: () => openSheet("item", item) },
-      el("span", { className: "item-name", textContent: item.name }),
-      meta,
-      el("span", { className: "gauge" }, el("i", { style: `width:${pct}%` }))),
+    main,
     el("div", { className: "stepper" },
-      minus,
+      el("button", {
+        type: "button", className: "step", ariaLabel: `Use one ${item.name}`, disabled: item.quantity <= 0,
+        onclick: () => run(() => api("POST", `/items/${item.id}/consume`, { amount: Math.min(1, item.quantity) })),
+      }, icon(ICON.minus)),
       el("span", { className: "qty" }, el("b", { textContent: num(item.quantity) }), el("small", { textContent: item.unit })),
-      plus));
+      el("button", {
+        type: "button", className: "step", ariaLabel: `Add one ${item.name}`,
+        onclick: () => run(() => api("POST", `/items/${item.id}/restock`, { amount: 1 })),
+      }, icon(ICON.plus))));
+}
+
+const BLOBS = ["#FBD9C6", "#DFEBCB", "#F7B993", "#C9D7AE"]; // corner colour of each place card, in turn
+
+function renderPlaces() {
+  $("screen-sub").textContent = "Where things are kept at home";
+  const cards = state.locations.map((loc, i) => {
+    const items = state.allItems.filter((it) => it.location_id === loc.id);
+    const low = items.filter((it) => it.low_stock).length;
+    const soon = items.filter(isSoon).length;
+    const notes = [];
+    if (low) notes.push(`${low} low`);
+    if (soon) notes.push(`${soon} expiring`);
+    const meta = items.length === 0 ? "Empty" : notes.length ? notes.join(" · ") : "All stocked";
+    return el("button", {
+      type: "button", className: "place-card", ariaLabel: `Show what is in ${loc.name}`,
+      onclick: () => { state.place = String(loc.id); state.filter = "all"; state.view = "stock"; run(async () => {}); window.scrollTo(0, 0); },
+    },
+      el("span", { className: "blob", style: `background:${BLOBS[i % BLOBS.length]}` }),
+      el("span", { className: "count serif", textContent: items.length }),
+      el("span", { className: "name serif", textContent: cap(loc.name) }),
+      el("span", { className: "meta", textContent: meta }));
+  });
+  const add = el("button", { type: "button", className: "place-card new", onclick: () => openSheet("place") },
+    icon(ICON.plus), el("span", { className: "name serif", textContent: "New place" }));
+  $("place-grid").replaceChildren(...cards, add);
 }
 
 function renderList(open) {
+  $("screen-sub").textContent = open.length ? `${open.length} to buy` : "All bought";
+
+  // How many low items are not on the list yet: what the big button would add.
+  const onList = new Set(open.map((e) => e.inventory_item_id));
+  const toAdd = state.allItems.filter((i) => i.low_stock && !onList.has(i.id)).length;
+  $("low-count").hidden = toAdd === 0;
+  $("low-count").textContent = toAdd;
+
   $("open-entries").replaceChildren(...open.map(entryRow));
   $("list-empty").hidden = open.length > 0;
   const bought = state.entries.filter((e) => e.status === "bought").slice(0, 15);
@@ -226,7 +266,10 @@ function renderList(open) {
 
 function entryRow(entry) {
   const isOpen = entry.status === "open";
-  const where = entry.inventory_item_id ? (entry.source === "low_stock" ? "running low at home" : "from your stock") : "not tracked in stock";
+  const amount = `${num(entry.quantity)} ${entry.unit}`;
+  const where = entry.inventory_item_id
+    ? (entry.source === "low_stock" ? "running low at home" : "from your stock")
+    : "not tracked in stock";
   return el("li", { className: "entry" },
     el("button", {
       type: "button", className: "tick", disabled: !isOpen,
@@ -235,7 +278,7 @@ function entryRow(entry) {
     }, icon(ICON.check)),
     el("span", { className: "entry-text" },
       el("span", { className: "entry-name", textContent: entry.name }),
-      el("span", { className: "entry-meta", textContent: `${num(entry.quantity)} ${entry.unit}, ${where}` })),
+      el("span", { className: "entry-meta", textContent: isOpen ? `${amount} · ${where}` : amount })),
     isOpen ? el("button", {
       type: "button", className: "remove", ariaLabel: `Remove ${entry.name} from the list`,
       onclick: () => run(() => api("DELETE", `/shopping-list/${entry.id}`), `Removed ${entry.name}`),
@@ -257,14 +300,15 @@ let lastFocus = null;
 
 function openSheet(kind, item = null) {
   lastFocus = document.activeElement;
+  $("toast").hidden = true;
   for (const id of ["form-item", "form-entry", "form-place"]) $(id).hidden = id !== `form-${kind}`;
   const form = $(`form-${kind}`);
   form.reset();
 
   if (kind === "item") {
+    // One form for both: state.editingId says whether Save sends PATCH (edit) or POST (new).
     state.editingId = item ? item.id : null;
-    const select = form.elements.location_id;
-    select.replaceChildren(...state.locations.map((l) => new Option(l.name, l.id)));
+    form.elements.location_id.replaceChildren(...state.locations.map((l) => new Option(cap(l.name), l.id)));
     const values = item ?? { quantity: 1, unit: "pcs", min_threshold: 0, location_id: Number(state.place) || state.locations[0]?.id };
     for (const key of ["name", "location_id", "quantity", "unit", "min_threshold", "expiry_date"]) {
       if (values[key] != null) form.elements[key].value = values[key];
@@ -341,11 +385,12 @@ document.querySelectorAll(".tab").forEach((tab) =>
 document.querySelectorAll("[data-filter]").forEach((chip) =>
   chip.addEventListener("click", () => { state.filter = chip.dataset.filter; run(async () => {}); }));
 
-$("fab").addEventListener("click", () => openSheet(state.view === "stock" ? "item" : "entry"));
+$("fab").addEventListener("click", () =>
+  openSheet({ stock: "item", places: "place", list: "entry" }[state.view]));
 
 $("from-low-stock").addEventListener("click", () =>
   run(() => api("POST", "/shopping-list/from-low-stock"), (added) =>
-    added.length ? `Added ${added.length} ${added.length === 1 ? "item" : "items"} that ${added.length === 1 ? "is" : "are"} running low` : "Nothing is running low"));
+    added.length ? `Added ${plural(added.length, "item", "items")} that ${added.length === 1 ? "is" : "are"} running low` : "Nothing is running low"));
 
 $("scrim").addEventListener("click", closeSheet);
 $("sheet-close").addEventListener("click", closeSheet);
