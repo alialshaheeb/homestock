@@ -1,12 +1,11 @@
 """Inventory HTTP API. Thin layer: validate input, call service.py, map errors to status codes."""
-import sqlite3
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
-from db import get_db
-from inventory import service
+from app.db import get_db
+from app import service
 
 router = APIRouter(tags=["inventory"])
 
@@ -49,12 +48,12 @@ def _call(fn, *args, **kwargs):
 
 
 @router.get("/locations")
-def list_locations(conn: sqlite3.Connection = Depends(get_db)):
+def list_locations(conn=Depends(get_db)):
     return service.list_locations(conn)
 
 
 @router.post("/locations", status_code=201)
-def create_location(body: LocationIn, conn: sqlite3.Connection = Depends(get_db)):
+def create_location(body: LocationIn, conn=Depends(get_db)):
     return _call(service.create_location, conn, body.name)
 
 
@@ -63,39 +62,39 @@ def list_items(
     location_id: int | None = None,
     low_stock: bool = False,
     expiring_within_days: int | None = Query(default=None, ge=0),
-    conn: sqlite3.Connection = Depends(get_db),
+    conn=Depends(get_db),
 ):
     return service.list_items(conn, location_id, low_stock, expiring_within_days)
 
 
 @router.post("/items", status_code=201)
-def create_item(body: ItemIn, conn: sqlite3.Connection = Depends(get_db)):
+def create_item(body: ItemIn, conn=Depends(get_db)):
     return _call(service.create_item, conn, body.model_dump())
 
 
 @router.get("/items/{item_id}")
-def get_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)):
+def get_item(item_id: int, conn=Depends(get_db)):
     return _call(service.get_item, conn, item_id)
 
 
 @router.patch("/items/{item_id}")
-def update_item(item_id: int, body: ItemPatch, conn: sqlite3.Connection = Depends(get_db)):
+def update_item(item_id: int, body: ItemPatch, conn=Depends(get_db)):
     # exclude_unset: a field the client did not send is left alone, but an explicit
     # "expiry_date": null clears the date.
     return _call(service.update_item, conn, item_id, body.model_dump(exclude_unset=True))
 
 
 @router.delete("/items/{item_id}", status_code=204)
-def delete_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)):
+def delete_item(item_id: int, conn=Depends(get_db)):
     _call(service.delete_item, conn, item_id)
     return Response(status_code=204)
 
 
 @router.post("/items/{item_id}/consume")
-def consume(item_id: int, body: StockChange, conn: sqlite3.Connection = Depends(get_db)):
+def consume(item_id: int, body: StockChange, conn=Depends(get_db)):
     return _call(service.consume, conn, item_id, body.amount)
 
 
 @router.post("/items/{item_id}/restock")
-def restock(item_id: int, body: StockChange, conn: sqlite3.Connection = Depends(get_db)):
+def restock(item_id: int, body: StockChange, conn=Depends(get_db)):
     return _call(service.restock, conn, item_id, body.amount)

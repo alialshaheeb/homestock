@@ -1,12 +1,12 @@
-"""Restock HTTP API (/shopping-list). Thin layer over restock/service.py."""
-import sqlite3
+"""Restock HTTP API (/shopping-list). Thin layer over app/service.py."""
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
-from db import get_db
-from restock import service
+from app import service
+from app.db import get_db
+from app.inventory_client import InventoryUnavailable
 
 router = APIRouter(prefix="/shopping-list", tags=["restock"])
 
@@ -32,40 +32,43 @@ def _call(fn, *args, **kwargs):
         raise HTTPException(status_code=404, detail=str(e))
     except service.Conflict as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except InventoryUnavailable:
+        # Designed failure: the list itself still works, only this action needs Inventory.
+        raise HTTPException(status_code=503, detail="The inventory service is not reachable right now. Try again in a moment.")
 
 
 @router.get("")
-def list_entries(status: Literal["open", "bought"] | None = None, conn: sqlite3.Connection = Depends(get_db)):
+def list_entries(status: Literal["open", "bought"] | None = None, conn=Depends(get_db)):
     return service.list_entries(conn, status)
 
 
 @router.post("", status_code=201)
-def add_entry(body: EntryIn, conn: sqlite3.Connection = Depends(get_db)):
+def add_entry(body: EntryIn, conn=Depends(get_db)):
     return _call(service.add_entry, conn, body.quantity, body.name, body.unit, body.inventory_item_id)
 
 
 @router.post("/from-low-stock")
-def add_low_stock_items(conn: sqlite3.Connection = Depends(get_db)):
+def add_low_stock_items(conn=Depends(get_db)):
     """Adds every low-stock Inventory item that is not already on the list. Returns the new entries."""
     return service.add_low_stock_items(conn)
 
 
 @router.get("/{entry_id}")
-def get_entry(entry_id: int, conn: sqlite3.Connection = Depends(get_db)):
+def get_entry(entry_id: int, conn=Depends(get_db)):
     return _call(service.get_entry, conn, entry_id)
 
 
 @router.patch("/{entry_id}")
-def update_entry(entry_id: int, body: EntryPatch, conn: sqlite3.Connection = Depends(get_db)):
+def update_entry(entry_id: int, body: EntryPatch, conn=Depends(get_db)):
     return _call(service.update_entry, conn, entry_id, body.model_dump(exclude_unset=True))
 
 
 @router.delete("/{entry_id}", status_code=204)
-def delete_entry(entry_id: int, conn: sqlite3.Connection = Depends(get_db)):
+def delete_entry(entry_id: int, conn=Depends(get_db)):
     _call(service.delete_entry, conn, entry_id)
     return Response(status_code=204)
 
 
 @router.post("/{entry_id}/bought")
-def mark_bought(entry_id: int, conn: sqlite3.Connection = Depends(get_db)):
+def mark_bought(entry_id: int, conn=Depends(get_db)):
     return _call(service.mark_bought, conn, entry_id)
