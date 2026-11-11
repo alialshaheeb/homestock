@@ -50,7 +50,7 @@ def add_entry(body: EntryIn, conn=Depends(get_db)):
 @router.post("/from-low-stock")
 def add_low_stock_items(conn=Depends(get_db)):
     """Adds every low-stock Inventory item that is not already on the list. Returns the new entries."""
-    return service.add_low_stock_items(conn)
+    return _call(service.add_low_stock_items, conn)
 
 
 @router.get("/{entry_id}")
