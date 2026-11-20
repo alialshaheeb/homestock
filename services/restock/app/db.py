@@ -24,6 +24,7 @@ def connect(url: str | None = None) -> pymssql.Connection:
         database=parts.path.lstrip("/"),
         login_timeout=5,
         timeout=10,
+        encryption="require",  # Azure SQL refuses unencrypted connections; local SQL Server supports TLS too
     )
     conn.cursor().execute(SESSION_SETTINGS)
     return conn
