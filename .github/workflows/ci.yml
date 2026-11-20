@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:               # every push, on any branch
+  pull_request:       # every pull request
+  workflow_call:      # lets the CD workflow run CI first (step 5)
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false                      # one service failing does not cancel the other
+      matrix:
+        service: [inventory, restock]       # the job runs twice, once per service
+    services:
+      sqlserver:                            # a throwaway SQL Server next to the job, deleted afterwards
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: ${{ secrets.TEST_SA_PASSWORD }}
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P $MSSQL_SA_PASSWORD -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}   # every run step starts in that service's folder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"            # same version as the Dockerfiles
+      - name: Install
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Lint
+        run: ruff check .
+      - name: Test with a 70% coverage gate
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=70
+        env:
+          TEST_DATABASE_URL: mssql://sa:${{ secrets.TEST_SA_PASSWORD }}@localhost:1433/${{ matrix.service }}_test
+      - name: Build the image (a failed build fails CI)
+        run: docker build -t homestock-${{ matrix.service }}:ci .
+
+  images:
+    needs: test                             # never build an image from a commit whose tests failed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write                       # lets the built-in token push to GHCR
+    strategy:
+      matrix:
+        service: [inventory, restock]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lowercase owner for the image name
+        run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          push: ${{ github.ref == 'refs/heads/main' }}   # build everywhere, publish only from main
+          provenance: false                              # Azure cannot pull images with provenance attestations
+          tags: ghcr.io/${{ env.OWNER }}/homestock-${{ matrix.service }}:${{ github.sha }}
