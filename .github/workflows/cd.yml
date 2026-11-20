@@ -1,0 +1,109 @@
+name: CD
+
+# Every push to main: run the full CI (tests, then build and push both images to GHCR),
+# then deploy those exact images to Azure. Nothing is deployed if CI fails.
+on:
+  push:
+    branches: [main]
+
+# Two deploys never run at the same time; a newer push waits for the running one.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: write
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write   # lets azure/login get a GitHub OIDC token (no Azure password stored)
+      contents: read
+    env:
+      PREFIX: ${{ vars.PREFIX }}
+      RG: ${{ vars.RESOURCE_GROUP }}
+      UI_STORAGE: ${{ vars.UI_STORAGE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign in to Azure as the managed identity (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Work out names and addresses
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+          fqdn() { az containerapp show --name "$1" --resource-group "$RG" --query properties.configuration.ingress.fqdn -o tsv; }
+          echo "INVENTORY_URL=https://$(fqdn "$PREFIX-inventory")" >> "$GITHUB_ENV"
+          echo "RESTOCK_URL=https://$(fqdn "$PREFIX-restock")" >> "$GITHUB_ENV"
+          web=$(az storage account show --name "$UI_STORAGE" --resource-group "$RG" --query primaryEndpoints.web -o tsv)
+          echo "UI_ORIGIN=${web%/}" >> "$GITHUB_ENV"   # the browser's Origin has no trailing slash
+          echo "SQL_HOST=$PREFIX-sql.database.windows.net" >> "$GITHUB_ENV"
+
+      - name: Deploy the inventory service
+        env:
+          DB_PASSWORD: ${{ secrets.INVENTORY_DB_PASSWORD }}
+        run: |
+          app="$PREFIX-inventory"
+          az containerapp secret set --name "$app" --resource-group "$RG" \
+            --secrets "database-url=mssql://inventory_user:$DB_PASSWORD@$SQL_HOST:1433/$PREFIX-inventory-db" -o none
+          az containerapp update --name "$app" --resource-group "$RG" \
+            --image "ghcr.io/$OWNER/homestock-inventory:$GITHUB_SHA" \
+            --min-replicas 0 --max-replicas 1 \
+            --set-env-vars "DATABASE_URL=secretref:database-url" "PORT=8000" \
+                           "CORS_ORIGINS=$UI_ORIGIN" "GIT_SHA=$GITHUB_SHA" -o none
+
+      - name: Deploy the restock service
+        env:
+          DB_PASSWORD: ${{ secrets.RESTOCK_DB_PASSWORD }}
+        run: |
+          app="$PREFIX-restock"
+          az containerapp secret set --name "$app" --resource-group "$RG" \
+            --secrets "database-url=mssql://restock_user:$DB_PASSWORD@$SQL_HOST:1433/$PREFIX-restock-db" -o none
+          az containerapp update --name "$app" --resource-group "$RG" \
+            --image "ghcr.io/$OWNER/homestock-restock:$GITHUB_SHA" \
+            --min-replicas 0 --max-replicas 1 \
+            --set-env-vars "DATABASE_URL=secretref:database-url" "PORT=8000" \
+                           "CORS_ORIGINS=$UI_ORIGIN" "GIT_SHA=$GITHUB_SHA" \
+                           "INVENTORY_URL=$INVENTORY_URL" "INVENTORY_TIMEOUT_S=2" -o none
+
+      - name: Point the UI at the services and upload it
+        run: |
+          cat > ui/config.js <<EOF
+          // Written by the CD pipeline for commit $GITHUB_SHA.
+          window.HOMESTOCK_CONFIG = {
+            inventoryUrl: "$INVENTORY_URL",
+            restockUrl: "$RESTOCK_URL",
+          };
+          EOF
+          az storage blob upload-batch --account-name "$UI_STORAGE" --auth-mode key \
+            --destination '$web' --source ui --overwrite \
+            --content-cache-control "no-cache" -o none
+
+      - name: Health check (allows for a cold start and a paused database)
+        run: |
+          for url in "$INVENTORY_URL" "$RESTOCK_URL"; do
+            for attempt in $(seq 1 20); do
+              body=$(curl -s --max-time 60 "$url/health" || true)
+              if echo "$body" | grep -q "\"version\":\"$GITHUB_SHA\"" && echo "$body" | grep -q '"status":"ok"'; then
+                echo "healthy: $url -> $body"
+                continue 2
+              fi
+              echo "not ready yet ($attempt/20): $url -> ${body:-no answer}"
+              sleep 15
+            done
+            echo "::error::$url/health never returned 200 with version $GITHUB_SHA"
+            exit 1
+          done
+          echo "Live: $UI_ORIGIN"
