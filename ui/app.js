@@ -25,7 +25,16 @@ function serviceFor(path) {
     : { name: "inventory", url: CONFIG.inventoryUrl };
 }
 
-async function api(method, path, body) {
+// On Azure both services scale to zero. The first request after a quiet period starts the
+// container and may wake a paused database; until it is ready Azure answers 503 "App port is
+// not ready" (after ~30 s) without CORS headers, so the browser only sees a failed fetch.
+// Reads are retried while a "starting up" message is shown. Writes are never retried, because a
+// write may already have reached the service: the user is told to try again instead.
+const COLD_START_RETRIES = 4;
+const COLD_START_DELAY_MS = 5000;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function api(method, path, body, attempt = 1) {
   const service = serviceFor(path);
   let res;
   try {
@@ -35,8 +44,13 @@ async function api(method, path, body) {
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    // No answer at all: the service is stopped or unreachable.
-    throw new Error(`Can't reach the ${service.name} service right now. Try again in a moment.`);
+    // No answer we can read: the service is starting up, stopped or unreachable.
+    if (method === "GET" && attempt <= COLD_START_RETRIES) {
+      toast(`The ${service.name} service is starting up, trying again (${attempt}/${COLD_START_RETRIES})…`);
+      await sleep(COLD_START_DELAY_MS);
+      return api(method, path, body, attempt + 1);
+    }
+    throw new Error(`The ${service.name} service is starting up or unreachable. Try again in a minute.`);
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
