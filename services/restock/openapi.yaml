@@ -1,0 +1,501 @@
+openapi: 3.1.0
+info:
+  title: HomeStock restock
+  version: dev
+paths:
+  /health:
+    get:
+      summary: Health
+      description: '200 only if this service can read and write its own database.
+        The inventory
+
+        service''s state is never part of it: Inventory being down does not make this
+        503.'
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: The database cannot be read or written
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /shopping-list:
+    get:
+      tags:
+      - restock
+      summary: List Entries
+      operationId: list_entries_shopping_list_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - open
+            - bought
+            type: string
+          - type: 'null'
+          title: Status
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Entry'
+                title: Response List Entries Shopping List Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - restock
+      summary: Add Entry
+      operationId: add_entry_shopping_list_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntryIn'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entry'
+        '404':
+          description: No entry (or Inventory item) with that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '409':
+          description: Breaks a rule (already on the list, already bought)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '503':
+          description: The inventory service is not reachable; nothing was changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /shopping-list/from-low-stock:
+    post:
+      tags:
+      - restock
+      summary: Add Low Stock Items
+      description: Adds every low-stock Inventory item that is not already on the
+        list. Returns the new entries.
+      operationId: add_low_stock_items_shopping_list_from_low_stock_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Entry'
+                type: array
+                title: Response Add Low Stock Items Shopping List From Low Stock Post
+        '503':
+          description: The inventory service is not reachable; nothing was changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+  /shopping-list/{entry_id}:
+    get:
+      tags:
+      - restock
+      summary: Get Entry
+      operationId: get_entry_shopping_list__entry_id__get
+      parameters:
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Entry Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entry'
+        '404':
+          description: No entry (or Inventory item) with that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - restock
+      summary: Update Entry
+      operationId: update_entry_shopping_list__entry_id__patch
+      parameters:
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Entry Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntryPatch'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entry'
+        '404':
+          description: No entry (or Inventory item) with that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '409':
+          description: Breaks a rule (already on the list, already bought)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - restock
+      summary: Delete Entry
+      operationId: delete_entry_shopping_list__entry_id__delete
+      parameters:
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Entry Id
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          description: No entry (or Inventory item) with that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /shopping-list/{entry_id}/bought:
+    post:
+      tags:
+      - restock
+      summary: Mark Bought
+      operationId: mark_bought_shopping_list__entry_id__bought_post
+      parameters:
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Entry Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoughtEntry'
+        '404':
+          description: No entry (or Inventory item) with that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '409':
+          description: Breaks a rule (already on the list, already bought)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '503':
+          description: The inventory service is not reachable; nothing was changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    BoughtEntry:
+      properties:
+        id:
+          type: integer
+          title: Id
+        name:
+          type: string
+          title: Name
+        quantity:
+          type: number
+          title: Quantity
+        unit:
+          type: string
+          title: Unit
+        inventory_item_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Inventory Item Id
+          description: Inventory item this entry restocks; null for free text
+        source:
+          type: string
+          enum:
+          - manual
+          - low_stock
+          title: Source
+        status:
+          type: string
+          enum:
+          - open
+          - bought
+          title: Status
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        bought_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Bought At
+        restocked:
+          type: boolean
+          title: Restocked
+          description: True if the quantity was added to the Inventory item
+      type: object
+      required:
+      - id
+      - name
+      - quantity
+      - unit
+      - inventory_item_id
+      - source
+      - status
+      - created_at
+      - bought_at
+      - restocked
+      title: BoughtEntry
+    Entry:
+      properties:
+        id:
+          type: integer
+          title: Id
+        name:
+          type: string
+          title: Name
+        quantity:
+          type: number
+          title: Quantity
+        unit:
+          type: string
+          title: Unit
+        inventory_item_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Inventory Item Id
+          description: Inventory item this entry restocks; null for free text
+        source:
+          type: string
+          enum:
+          - manual
+          - low_stock
+          title: Source
+        status:
+          type: string
+          enum:
+          - open
+          - bought
+          title: Status
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        bought_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Bought At
+      type: object
+      required:
+      - id
+      - name
+      - quantity
+      - unit
+      - inventory_item_id
+      - source
+      - status
+      - created_at
+      - bought_at
+      title: Entry
+    EntryIn:
+      properties:
+        quantity:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Quantity
+        name:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Name
+        unit:
+          anyOf:
+          - type: string
+            maxLength: 20
+            minLength: 1
+          - type: 'null'
+          title: Unit
+        inventory_item_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Inventory Item Id
+      type: object
+      required:
+      - quantity
+      title: EntryIn
+      description: Either a free-text `name`, or an `inventory_item_id` (name and
+        unit are then copied).
+    EntryPatch:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 100
+            minLength: 1
+          - type: 'null'
+          title: Name
+        quantity:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Quantity
+        unit:
+          anyOf:
+          - type: string
+            maxLength: 20
+            minLength: 1
+          - type: 'null'
+          title: Unit
+      type: object
+      title: EntryPatch
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    Health:
+      properties:
+        status:
+          type: string
+          title: Status
+          description: '"ok", or "unavailable" with a 503'
+        db:
+          type: string
+          title: Db
+          description: '"ok", or the database error'
+        version:
+          type: string
+          title: Version
+          description: Commit SHA of the running image (GIT_SHA), "dev" locally
+      type: object
+      required:
+      - status
+      - db
+      - version
+      title: Health
+    Message:
+      properties:
+        detail:
+          type: string
+          title: Detail
+      type: object
+      required:
+      - detail
+      title: Message
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

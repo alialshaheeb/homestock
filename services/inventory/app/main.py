@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from app import db, service
 from app.migrations import migrate
@@ -16,6 +17,12 @@ log = logging.getLogger("inventory")
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 VERSION = os.environ.get("GIT_SHA", "dev")  # set to the commit SHA when the image is deployed
+
+
+class Health(BaseModel):
+    status: str = Field(description='"ok", or "unavailable" with a 503')
+    db: str = Field(description='"ok", or the database error')
+    version: str = Field(description="Commit SHA of the running image (GIT_SHA), \"dev\" locally")
 
 
 @asynccontextmanager
@@ -52,7 +59,8 @@ def create_app() -> FastAPI:
         log.info("%s %s %s %.0fms", request.method, request.url.path, response.status_code, ms)
         return response
 
-    @app.get("/health")
+    @app.get("/health", response_model=Health,
+             responses={503: {"model": Health, "description": "The database cannot be read or written"}})
     def health():
         """200 only if this service can read and write its own database (the restock
         service's state is never part of it). The write is rolled back."""
