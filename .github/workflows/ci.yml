@@ -45,8 +45,50 @@ jobs:
       - name: Build the image (a failed build fails CI)
         run: docker build -t homestock-${{ matrix.service }}:ci .
 
+  docs:
+    # system.yaml and the OpenAPI documents are graded against the code: check they are valid.
+    # (tests/test_openapi.py in each service checks openapi.yaml still matches the routes.)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install validators
+        run: pip install check-jsonschema==0.29.4 openapi-spec-validator==0.7.1
+      - name: system.yaml follows system.schema.json
+        run: check-jsonschema --schemafile system.schema.json system.yaml
+      - name: Each openapi.yaml is a valid OpenAPI document
+        run: openapi-spec-validator services/inventory/openapi.yaml services/restock/openapi.yaml
+
+  integration:
+    # The real stack from docker-compose.yml: restock calls inventory over HTTP, each service on its
+    # own database, the same seam as on Azure (ADR-9). The passwords exist only for this run.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Throwaway passwords for this run
+        run: |
+          for name in SA_PASSWORD INVENTORY_DB_PASSWORD RESTOCK_DB_PASSWORD; do
+            value="$(openssl rand -hex 12)Aa1-"
+            echo "::add-mask::$value"
+            echo "$name=$value" >> .env
+          done
+      - name: Start SQL Server and both services
+        run: docker compose up -d --build inventory restock   # waits for db-init; the test waits for /health
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -r tests/integration/requirements.txt
+      - name: Integration test across the seam
+        run: pytest -v tests/integration
+      - name: Service logs (only if something failed)
+        if: failure()
+        run: docker compose logs --no-color
+
   images:
-    needs: test                             # never build an image from a commit whose tests failed
+    needs: [test, docs, integration]        # never build an image from a commit whose checks failed
     runs-on: ubuntu-latest
     permissions:
       contents: read
