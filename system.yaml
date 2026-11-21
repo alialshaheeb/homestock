@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=./system.schema.json
+student: aalshaheeb.ieu2024
+prefix: aalshaheeb-ieu2024
+public_url: https://aalshaheebieu2024ui.z28.web.core.windows.net
+ui:
+  path: ui
+  storage_account: aalshaheebieu2024ui
+  calls: [inventory, restock]
+azure:
+  resource_group: rg-aalshaheeb-ieu2024
+  container_apps_environment: aalshaheeb-ieu2024-env
+  sql_server: aalshaheeb-ieu2024-sql
+  registry: ghcr.io/alialshaheeb
+services:
+  inventory:
+    description: What is in the house - places (locations), items, stock levels, low-stock and expiry filters.
+    path: services/inventory
+    openapi: services/inventory/openapi.yaml
+    port_default: 8000
+    health: /health
+    migrations: services/inventory/migrations
+    env:
+      PORT: { default: 8000, description: Port uvicorn listens on (read by the Dockerfile's CMD) }
+      DATABASE_URL: { secret: true, description: "Connection string of the inventory database, mssql://user:password@host:1433/database" }
+      CORS_ORIGINS: { default: "", description: "Browser origins allowed to call the API, comma-separated (the UI's address); empty allows none" }
+      GIT_SHA: { default: dev, description: "Commit SHA of the deployed image, reported as version by /health" }
+    azure:
+      container_app: aalshaheeb-ieu2024-inventory
+      sql_database: aalshaheeb-ieu2024-inventory-db
+  restock:
+    description: The shopping list - entries to buy, filled from low-stock items; buying one restocks Inventory.
+    path: services/restock
+    openapi: services/restock/openapi.yaml
+    port_default: 8000
+    health: /health
+    migrations: services/restock/migrations
+    env:
+      PORT: { default: 8000, description: Port uvicorn listens on (read by the Dockerfile's CMD) }
+      DATABASE_URL: { secret: true, description: "Connection string of the restock database, mssql://user:password@host:1433/database" }
+      CORS_ORIGINS: { default: "", description: "Browser origins allowed to call the API, comma-separated (the UI's address); empty allows none" }
+      GIT_SHA: { default: dev, description: "Commit SHA of the deployed image, reported as version by /health" }
+      INVENTORY_URL: { default: "http://inventory:8000", description: Base URL of the inventory service }
+      INVENTORY_TIMEOUT_S: { default: 2, description: Timeout in seconds for each call to the inventory service }
+    calls:
+      - service: inventory
+        url_env: INVENTORY_URL
+        endpoints: ["GET /items", "GET /items/{item_id}", "POST /items/{item_id}/restock"]
+        timeout_s: 2
+        on_failure: >-
+          "Add everything running low", adding an entry linked to an item and "mark bought" answer 503
+          "The inventory service is not reachable right now. Try again in a moment.", shown in the UI's
+          error message. Nothing is changed (Inventory is called before the entry is marked bought),
+          and the shopping list itself still loads.
+    azure:
+      container_app: aalshaheeb-ieu2024-restock
+      sql_database: aalshaheeb-ieu2024-restock-db
