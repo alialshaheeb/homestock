@@ -1,0 +1,552 @@
+openapi: 3.1.0
+info:
+  title: HomeStock inventory
+  version: dev
+paths:
+  /health:
+    get:
+      summary: Health
+      description: '200 only if this service can read and write its own database (the
+        restock
+
+        service''s state is never part of it). The write is rolled back.'
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: The database cannot be read or written
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /locations:
+    get:
+      tags:
+      - inventory
+      summary: List Locations
+      operationId: list_locations_locations_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Location'
+                type: array
+                title: Response List Locations Locations Get
+    post:
+      tags:
+      - inventory
+      summary: Create Location
+      operationId: create_location_locations_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationIn'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        '409':
+          description: Breaks a rule (duplicate name, not enough in stock)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /items:
+    get:
+      tags:
+      - inventory
+      summary: List Items
+      operationId: list_items_items_get
+      parameters:
+      - name: location_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Location Id
+      - name: low_stock
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Low Stock
+      - name: expiring_within_days
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+          title: Expiring Within Days
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Item'
+                title: Response List Items Items Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - inventory
+      summary: Create Item
+      operationId: create_item_items_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemIn'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '404':
+          description: No location or item with that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /items/{item_id}:
+    get:
+      tags:
+      - inventory
+      summary: Get Item
+      operationId: get_item_items__item_id__get
+      parameters:
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '404':
+          description: No location or item with that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - inventory
+      summary: Update Item
+      operationId: update_item_items__item_id__patch
+      parameters:
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemPatch'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '404':
+          description: No location or item with that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - inventory
+      summary: Delete Item
+      operationId: delete_item_items__item_id__delete
+      parameters:
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          description: No location or item with that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /items/{item_id}/consume:
+    post:
+      tags:
+      - inventory
+      summary: Consume
+      operationId: consume_items__item_id__consume_post
+      parameters:
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockChange'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '404':
+          description: No location or item with that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '409':
+          description: Breaks a rule (duplicate name, not enough in stock)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /items/{item_id}/restock:
+    post:
+      tags:
+      - inventory
+      summary: Restock
+      operationId: restock_items__item_id__restock_post
+      parameters:
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockChange'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '404':
+          description: No location or item with that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    Health:
+      properties:
+        status:
+          type: string
+          title: Status
+          description: '"ok", or "unavailable" with a 503'
+        db:
+          type: string
+          title: Db
+          description: '"ok", or the database error'
+        version:
+          type: string
+          title: Version
+          description: Commit SHA of the running image (GIT_SHA), "dev" locally
+      type: object
+      required:
+      - status
+      - db
+      - version
+      title: Health
+    Item:
+      properties:
+        id:
+          type: integer
+          title: Id
+        name:
+          type: string
+          title: Name
+        location_id:
+          type: integer
+          title: Location Id
+        location:
+          type: string
+          title: Location
+          description: Name of the location
+        quantity:
+          type: number
+          title: Quantity
+        unit:
+          type: string
+          title: Unit
+        min_threshold:
+          type: number
+          title: Min Threshold
+        expiry_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Expiry Date
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        low_stock:
+          type: boolean
+          title: Low Stock
+          description: min_threshold > 0 and quantity <= min_threshold
+      type: object
+      required:
+      - id
+      - name
+      - location_id
+      - location
+      - quantity
+      - unit
+      - min_threshold
+      - expiry_date
+      - created_at
+      - low_stock
+      title: Item
+    ItemIn:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+        location_id:
+          type: integer
+          title: Location Id
+        quantity:
+          type: number
+          minimum: 0.0
+          title: Quantity
+          default: 0
+        unit:
+          type: string
+          maxLength: 20
+          minLength: 1
+          title: Unit
+          default: pcs
+        min_threshold:
+          type: number
+          minimum: 0.0
+          title: Min Threshold
+          default: 0
+        expiry_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Expiry Date
+      type: object
+      required:
+      - name
+      - location_id
+      title: ItemIn
+    ItemPatch:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 100
+            minLength: 1
+          - type: 'null'
+          title: Name
+        location_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Location Id
+        quantity:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: 'null'
+          title: Quantity
+        unit:
+          anyOf:
+          - type: string
+            maxLength: 20
+            minLength: 1
+          - type: 'null'
+          title: Unit
+        min_threshold:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: 'null'
+          title: Min Threshold
+        expiry_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Expiry Date
+      type: object
+      title: ItemPatch
+      description: 'Every field optional: only the fields sent are changed.'
+    Location:
+      properties:
+        id:
+          type: integer
+          title: Id
+        name:
+          type: string
+          title: Name
+      type: object
+      required:
+      - id
+      - name
+      title: Location
+    LocationIn:
+      properties:
+        name:
+          type: string
+          maxLength: 50
+          minLength: 1
+          title: Name
+      type: object
+      required:
+      - name
+      title: LocationIn
+    Message:
+      properties:
+        detail:
+          type: string
+          title: Detail
+      type: object
+      required:
+      - detail
+      title: Message
+    StockChange:
+      properties:
+        amount:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Amount
+      type: object
+      required:
+      - amount
+      title: StockChange
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
