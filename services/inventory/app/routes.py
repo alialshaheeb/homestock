@@ -54,6 +54,7 @@ class Item(BaseModel):
     min_threshold: float
     expiry_date: date | None
     created_at: datetime
+    updated_at: datetime = Field(description="Last change to the item or its stock (migration 002)")
     low_stock: bool = Field(description="min_threshold > 0 and quantity <= min_threshold")
 
 

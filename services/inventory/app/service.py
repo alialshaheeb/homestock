@@ -25,7 +25,7 @@ WHERE NOT EXISTS (SELECT 1 FROM locations l WHERE l.name = v.name)
 
 _ITEM_SELECT = """
     SELECT i.id, i.name, i.location_id, l.name AS location, i.quantity, i.unit,
-           i.min_threshold, i.expiry_date, i.created_at
+           i.min_threshold, i.expiry_date, i.created_at, i.updated_at
     FROM items i JOIN locations l ON l.id = i.location_id
 """
 
@@ -130,7 +130,9 @@ def update_item(conn, item_id: int, changes: dict) -> dict:
         _require_location(conn, fields["location_id"])
     if fields:
         assignments = ", ".join(f"{column} = %s" for column in fields)  # names come from _UPDATABLE only
-        conn.cursor().execute(f"UPDATE items SET {assignments} WHERE id = %s", (*fields.values(), item_id))
+        conn.cursor().execute(
+            f"UPDATE items SET {assignments}, updated_at = SYSUTCDATETIME() WHERE id = %s", (*fields.values(), item_id)
+        )
         conn.commit()
     return get_item(conn, item_id)
 
@@ -152,7 +154,9 @@ def consume(conn, item_id: int, amount: float) -> dict:
     item = get_item(conn, item_id)
     if amount > item["quantity"]:
         raise Conflict(f"only {item['quantity']:g} {item['unit']} of {item['name']} in stock")
-    conn.cursor().execute("UPDATE items SET quantity = quantity - %s WHERE id = %s", (amount, item_id))
+    conn.cursor().execute(
+        "UPDATE items SET quantity = quantity - %s, updated_at = SYSUTCDATETIME() WHERE id = %s", (amount, item_id)
+    )
     conn.commit()
     return get_item(conn, item_id)
 
@@ -162,6 +166,8 @@ def restock(conn, item_id: int, amount: float) -> dict:
     if amount <= 0:
         raise Conflict("amount must be positive")
     get_item(conn, item_id)
-    conn.cursor().execute("UPDATE items SET quantity = quantity + %s WHERE id = %s", (amount, item_id))
+    conn.cursor().execute(
+        "UPDATE items SET quantity = quantity + %s, updated_at = SYSUTCDATETIME() WHERE id = %s", (amount, item_id)
+    )
     conn.commit()
     return get_item(conn, item_id)
