@@ -390,6 +390,11 @@ components:
           type: string
           format: date-time
           title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+          description: Last change to the item or its stock (migration 002)
         low_stock:
           type: boolean
           title: Low Stock
@@ -405,6 +410,7 @@ components:
       - min_threshold
       - expiry_date
       - created_at
+      - updated_at
       - low_stock
       title: Item
     ItemIn:
